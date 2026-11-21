@@ -23,11 +23,6 @@
 
 static void Require(bool value) { if (!value) std::abort(); }
 
-static void RequireLockAllDenied(int flags) {
-    *__error_nid_postfix() = 0;
-    Require(mlockall_nid_postfix(flags) == -1 && *__error_nid_postfix() == 1);
-}
-
 #if defined(__linux__) && !defined(ANYPS5_ENABLE_ASAN) && !defined(ANYPS5_ENABLE_TSAN)
 #define HAS_LOCKED_KILOBYTES
 static std::size_t LockedKilobytes() {
@@ -160,7 +155,6 @@ int main() {
     Require(sceKernelMunlock_nid_postfix(mapped, page) == sceOutOfMemory);
 #endif
 
-    for (const int flags : {0, 1, 2, 3, 4, 1 | 4, -1}) RequireLockAllDenied(flags);
     void* posixMapped = nullptr;
     Require(sceKernelMapFlexibleMemory(&posixMapped, page, 3, 0) == 0);
     Require(mlock_nid_postfix(posixMapped, page) == 0);
@@ -188,7 +182,34 @@ int main() {
     *__error_nid_postfix() = untouched;
     Require(sceKernelMunlockall_nid_postfix() == 0);
     Require(*__error_nid_postfix() == untouched);
-    *__error_nid_postfix() = 0;
-    Require(munlockall_nid_postfix() == -1 && *__error_nid_postfix() == 1);
+    for (const int flags : {0, 4, 1 | 4, -1}) {
+        *__error_nid_postfix() = 0;
+        Require(mlockall_nid_postfix(flags) == -1 && *__error_nid_postfix() == 22);
+    }
+#ifdef _WIN32
+    for (const int flags : {1, 2, 3}) {
+        *__error_nid_postfix() = 0;
+        Require(mlockall_nid_postfix(flags) == -1 && *__error_nid_postfix() == 1);
+    }
+#else
+    for (const int flags : {1, 2, 3}) {
+        *__error_nid_postfix() = 0;
+        const int locked = mlockall_nid_postfix(flags);
+        Require(locked == 0 || (locked == -1 && (*__error_nid_postfix() == 1 || *__error_nid_postfix() == 12)));
+        if (locked == 0) {
+            *__error_nid_postfix() = 0;
+            Require(munlockall_nid_postfix() == 0);
+        }
+    }
+#endif
+    {
+        const int untouched = 71;
+        void* allMapped = nullptr;
+        Require(sceKernelMapFlexibleMemory(&allMapped, page, 3, 0) == 0);
+        Require(mlock_nid_postfix(allMapped, page) == 0);
+        *__error_nid_postfix() = untouched;
+        Require(munlockall_nid_postfix() == 0 && *__error_nid_postfix() == untouched);
+        Require(sceKernelMunmap(reinterpret_cast<std::uint64_t>(allMapped), page) == 0);
+    }
     return 0;
 }

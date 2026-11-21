@@ -18,6 +18,7 @@
 #if defined(__linux__) || defined(__APPLE__)
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #elif defined(_WIN32)
 #include "prx/libc/include/WindowsDescriptor.hpp"
@@ -310,14 +311,26 @@ int APS5_VABI munlock_nid_postfix(const void* address, std::size_t length) {
 }
 
 int APS5_VABI mlockall_nid_postfix(int flags) {
-    (void)flags;
+    if (flags < 1 || flags > 3) {
+        SetError(GuestInvalid);
+        return -1;
+    }
+#ifdef _WIN32
     SetError(GuestNotPermitted);
     return -1;
+#else
+    if (::mlockall(flags) != 0) {
+        const int hostError = errno;
+        SetError(hostError == EINVAL ? GuestInvalid : hostError == ENOMEM ? GuestNoMemory : GuestNotPermitted);
+        return -1;
+    }
+    return 0;
+#endif
 }
 
 int APS5_VABI munlockall_nid_postfix() {
-    SetError(GuestNotPermitted);
-    return -1;
+    sceKernelMunlockall_nid_postfix();
+    return 0;
 }
 
 int APS5_VABI msync_nid_postfix(void* address, std::size_t length, int flags) {
